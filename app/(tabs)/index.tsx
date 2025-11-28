@@ -1,57 +1,82 @@
 // app/(tabs)/index.tsx
-import React, { useState } from "react"; // ★ useState adicionado
+import React, { useMemo, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
+  ActivityIndicator,
   FlatList,
-  TouchableOpacity,
-  Dimensions,
   StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-
-import SearchBar from "../../src/components/SearchBar"; // ★ import do SearchBar
-import CategoryItem from "../../src/components/CategoryItem"; // ★ import do CategoryItem
-import HighlightCard from "../../src/components/HighlightCard"; // ★ import do HighlightCard
-import { categories, highlights } from "../../src/data/mock"; // ★ import dos dados mock
-import { router } from "expo-router"; 
+import { router } from "expo-router";
+import SearchBar from "../../src/components/SearchBar";
+import CategoryItem from "../../src/components/CategoryItem";
+import HighlightCard from "../../src/components/HighlightCard";
 import { useFavorites } from "../../src/context/FavoritesContext";
-
-const { width } = Dimensions.get("window");
+import { usePlaces } from "../../src/context/PlacesContext";
+import type { Category, Highlight } from "../../src/types";
 
 export default function HomeScreen() {
-  const [search, setSearch] = useState(""); // ★ estado da search
-
+  const [search, setSearch] = useState("");
+  const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
+  const { categories, highlights, loading, error, refresh } = usePlaces();
   const { isFavorite, toggleFavorite } = useFavorites();
 
+  const vibeLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    categories.forEach((category) => map.set(category.id, category.title));
+    return map;
+  }, [categories]);
 
-  // ★ filtro simples usando o estado da SearchBar
-  const filteredHighlights = highlights.filter((h) =>
-    h.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const describeVibes = (vibes?: string[]) => {
+    if (!vibes || vibes.length === 0) return undefined;
+    return vibes
+      .map((id) => vibeLabels.get(id) ?? id)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(" • ");
+  };
 
-  // ★ render usando o componente CategoryItem
-  const renderCategory = ({ item }: { item: typeof categories[number] }) => (
+  const filteredHighlights = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return highlights.filter((highlight) => {
+      const matchesSearch =
+        term.length === 0 ||
+        highlight.title.toLowerCase().includes(term) ||
+        (highlight.subtitle ?? "").toLowerCase().includes(term) ||
+        (highlight.vibes ?? []).some((vibe) =>
+          (vibeLabels.get(vibe) ?? vibe).toLowerCase().includes(term)
+        );
+      const matchesVibe =
+        !selectedVibe || (highlight.vibes ?? []).includes(selectedVibe);
+      return matchesSearch && matchesVibe;
+    });
+  }, [highlights, search, selectedVibe, vibeLabels]);
+
+  const renderCategory = ({ item }: { item: Category }) => (
     <CategoryItem
       title={item.title}
-      onPress={() => {
-        console.log("Categoria:", item.id); // ainda stub
-        // Ex: router.push(`/categoria/${item.id}`)
-      }}
+      iconId={item.id}
+      active={selectedVibe === item.id}
+      onPress={() =>
+        setSelectedVibe((current) => (current === item.id ? null : item.id))
+      }
       testID={`cat-${item.id}`}
     />
   );
 
-  // ★ render usando o componente HighlightCard
-  const renderCard = ({ item }: { item: typeof highlights[number] }) => (
+  const renderCard = ({ item }: { item: Highlight }) => (
     <HighlightCard
+      id={item.id}
       title={item.title}
-      subtitle={item.subtitle}
-      onPress={() => 
-        router.push(`/details/${item.id}`)}
-        onToggleFavorite={() => toggleFavorite(item.id)}
-        isFavorite={isFavorite(item.id)}
-        testID={`hl-${item.id}`}    
+      subtitle={item.subtitle ?? describeVibes(item.vibes)}
+      meta={item.address}
+      imageUri={item.imageUri}
+      onPress={() => router.push(`/details/${item.id}`)}
+      onToggleFavorite={() => toggleFavorite(item.id)}
+      isFavorite={isFavorite(item.id)}
+      testID={`hl-${item.id}`}
     />
   );
 
@@ -59,57 +84,74 @@ export default function HomeScreen() {
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" />
 
-      {/* Top logo / título (mantive como texto por enquanto) */}
       <View style={styles.topRow}>
         <Text style={styles.logoText}>InDecision</Text>
       </View>
 
-      {/* Headline principal (texto do Figma) */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Qual sua vibe pra hoje?</Text>
         <Text style={styles.headerSubtitle}>Descubra sua vibe</Text>
       </View>
 
-      {/* ★ SearchBar reutilizável */}
       <SearchBar value={search} onChangeText={setSearch} />
 
-      {/* Categorias horizontais (Balada, Restaurante, etc.) */}
       <View style={styles.sectionSmall}>
         <FlatList
           data={categories}
-          renderItem={renderCategory} // ★ agora usa CategoryItem
-          keyExtractor={(i) => i.id}
+          renderItem={renderCategory}
+          keyExtractor={(item) => item.id}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingLeft: 16, paddingRight: 12 }}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>Sem vibes disponíveis</Text>
+            </View>
+          }
         />
       </View>
 
-      {/* Seção "Bombando nesta semana" */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Bombando nesta semana</Text>
-        <Text style={styles.sectionAction}>Ver tudo</Text>
+        <TouchableOpacity
+          onPress={refresh}
+          disabled={loading}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.sectionAction, loading && { opacity: 0.5 }]}>
+            {loading ? "Atualizando..." : "Atualizar"}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {error ? <Text style={styles.errorMessage}>{error}</Text> : null}
 
       <View style={styles.horizontalListWrap}>
-        <FlatList
-          data={filteredHighlights} // ★ usa dados filtrados pela SearchBar
-          renderItem={renderCard} // ★ agora usa HighlightCard
-          keyExtractor={(i) => i.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
-        />
+        {loading && filteredHighlights.length === 0 ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color="#ff3b2f" />
+            <Text style={styles.loadingText}>Carregando sugestões...</Text>
+          </View>
+        ) : filteredHighlights.length > 0 ? (
+          <FlatList
+            data={filteredHighlights}
+            renderItem={renderCard}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
+          />
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>Nenhuma sugestão encontrada.</Text>
+          </View>
+        )}
       </View>
 
-      {/* Espaço extra no final */}
       <View style={{ height: 24 }} />
     </View>
   );
 }
-
-/* ===== Estilos (tema InDecision: fundo escuro + laranja) */
-const CARD_W = Math.round(width * 0.64);
 
 const styles = StyleSheet.create({
   screen: {
@@ -117,7 +159,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B0B0B",
     paddingTop: 18,
   },
-
   topRow: {
     paddingHorizontal: 20,
     marginBottom: 6,
@@ -128,7 +169,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "uppercase",
   },
-
   header: {
     paddingHorizontal: 20,
     marginBottom: 12,
@@ -143,49 +183,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 6,
   },
-
-  searchWrapper: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  searchInput: {
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: "#141414",
-    paddingHorizontal: 14,
-    color: "#fff",
-    fontSize: 15,
-  },
-
   sectionSmall: {
     marginBottom: 8,
   },
-
-  catItem: {
-    width: 84,
-    alignItems: "center",
-    marginRight: 12,
-  },
-  catIconPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: "#1e1e1e",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  catIconText: {
-    color: "#f2f2f2",
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  catLabel: {
-    marginTop: 8,
-    color: "#f2f2f2",
-    fontSize: 13,
-    textAlign: "center",
-  },
-
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -203,47 +203,28 @@ const styles = StyleSheet.create({
     color: "#9a9a9a",
     fontSize: 13,
   },
-
   horizontalListWrap: {
-    height: 160,
+    minHeight: 160,
+    justifyContent: "center",
   },
-
-  card: {
-    width: CARD_W,
-    marginRight: 12,
-    borderRadius: 14,
-    backgroundColor: "#121212",
-    padding: 12,
+  loadingState: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 20,
   },
-
-  cardImagePlaceholder: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
-    backgroundColor: "#1e1e1e",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  cardImageText: {
+  loadingText: {
     color: "#f2f2f2",
-    fontSize: 24,
-    fontWeight: "800",
+    marginLeft: 12,
   },
-
-  cardBody: {
-    flex: 1,
+  emptyState: {
+    paddingHorizontal: 20,
   },
-  cardTitle: {
-    color: "#f2f2f2",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-  cardSubtitle: {
+  emptyText: {
     color: "#9a9a9a",
-    fontSize: 13,
+  },
+  errorMessage: {
+    color: "#ff6b5f",
+    paddingHorizontal: 16,
+    marginBottom: 4,
   },
 });
