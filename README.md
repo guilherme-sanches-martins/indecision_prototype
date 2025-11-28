@@ -47,11 +47,6 @@ Aplicativo mobile (Expo/React Native) que sugere lugares de acordo com “vibes�
 - `src/storage/database.ts` schema + cache SQLite
 - `src/types/` tipos compartilhados
 
-## Screenshots/Visuals
-- Adicione capturas do app rodando (home, detalhes, favoritos). Exemplos de comandos: `expo start --web` e usar a ferramenta de screenshot do SO.
-
-## Publicação
-- Torne o repositório público no GitHub quando finalizar (Settings > Manage Access > Change visibility).
 
 ## Troubleshooting
 - Endpoints 404: atualizar URLs dos blobs ou manter fallback local.
